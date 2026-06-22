@@ -1,0 +1,15 @@
+# Salesforce DX
+.sfdx/
+.sf/
+*.dup
+package.zip
+
+# IDE
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
