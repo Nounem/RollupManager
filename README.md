@@ -9,7 +9,7 @@ Moteur générique de calcul rollup entre deux objets Salesforce.
 
 > Remplacer `YOUR-USERNAME` par votre nom d'utilisateur GitHub après création du repo.
 
-[![Deploy to Salesforce](https://githubsfdeploy.herokuapp.com/resources/img/deploy.png)](https://githubsfdeploy.herokuapp.com/?owner=YOUR-USERNAME&repo=RollupManager&ref=main)
+[![Deploy to Salesforce](https://githubsfdeploy.herokuapp.com/resources/img/deploy.png)](https://githubsfdeploy.herokuapp.com/?owner=Nounem&repo=RollupManager&ref=main)
 
 ---
 
@@ -43,7 +43,7 @@ Moteur générique de calcul rollup entre deux objets Salesforce.
 ### 1. Cloner le repository
 
 ```bash
-git clone https://github.com/YOUR-USERNAME/RollupManager.git
+git clone https://github.com/Nounem/RollupManager.git
 cd RollupManager
 ```
 
