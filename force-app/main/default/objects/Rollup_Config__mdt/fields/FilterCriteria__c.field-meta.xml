@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>FilterCriteria__c</fullName>
+    <description>Clause SOQL optionnelle appliquee aux enfants, sans le mot WHERE. Exemples : StageName = 'Closed Won', IsClosed = false.</description>
+    <fieldManageability>SubscriberControlled</fieldManageability>
+    <inlineHelpText>Clause SOQL enfant sans WHERE. Exemples : StageName = 'Closed Won', IsClosed = false.</inlineHelpText>
+    <label>Filter Criteria</label>
+    <length>32768</length>
+    <type>LongTextArea</type>
+    <visibleLines>3</visibleLines>
+</CustomField>

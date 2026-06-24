@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>RelationshipField__c</fullName>
+    <description>Champ lookup ou master-detail sur l'objet enfant vers le parent. Exemples : AccountId, Commande__c.</description>
+    <fieldManageability>SubscriberControlled</fieldManageability>
+    <inlineHelpText>Champ relation sur l'enfant vers le parent. Exemples : AccountId, Commande__c.</inlineHelpText>
+    <label>Relationship Field</label>
+    <length>80</length>
+    <required>true</required>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

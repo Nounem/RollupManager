@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>ParentObject__c</fullName>
+    <description>API name de l'objet parent a mettre a jour. Exemples : Account, Commande__c.</description>
+    <fieldManageability>SubscriberControlled</fieldManageability>
+    <inlineHelpText>API name de l'objet parent a mettre a jour. Exemples : Account, Commande__c.</inlineHelpText>
+    <label>Parent Object</label>
+    <length>80</length>
+    <required>true</required>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>TargetField__c</fullName>
+    <description>Champ numerique sur le parent qui recevra le resultat. Exemples : Total_CA__c, Nb_Cases__c.</description>
+    <fieldManageability>SubscriberControlled</fieldManageability>
+    <inlineHelpText>Champ numerique sur le parent qui recevra le resultat. Exemples : Total_CA__c, Nb_Cases__c.</inlineHelpText>
+    <label>Target Field</label>
+    <length>80</length>
+    <required>true</required>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>
