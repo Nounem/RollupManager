@@ -1,10 +1,9 @@
-public class OpportunityRollupTriggerHandler {
+public class AccountRollupTriggerHandler {
 
     public static void run() {
         if (RollupTriggerControl.disabled) return;
 
-        RollupHelper.calculateAll(
-            buildConfigs(),
+        AccountProfilClientHierarchyRollupHelper.recalculate(
             Trigger.new,
             Trigger.old,
             Trigger.isInsert,
@@ -12,10 +11,5 @@ public class OpportunityRollupTriggerHandler {
             Trigger.isDelete,
             Trigger.isUndelete
         );
-    }
-
-    @TestVisible
-    private static List<RollupHelper.RollupConfig> buildConfigs() {
-        return RollupConfigProvider.getConfigs('Opportunity');
     }
 }

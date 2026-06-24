@@ -10,6 +10,13 @@ force-app/main/default/classes/AccountHierarchyHelper.cls-meta.xml
 force-app/main/default/classes/AccountHierarchyHelperTest.cls
 force-app/main/default/classes/AccountHierarchyHelperTest.cls-meta.xml
 
+# Local org metadata dumps
+force-app/main/default/objects/Account/**
+!force-app/main/default/objects/Account/
+!force-app/main/default/objects/Account/fields/
+!force-app/main/default/objects/Account/fields/Total_CA__c.field-meta.xml
+force-app/main/default/objects/Profil_client__c/
+
 # IDE
 .vscode/
 *.swp

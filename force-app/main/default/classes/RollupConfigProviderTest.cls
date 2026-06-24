@@ -2,18 +2,28 @@
 private class RollupConfigProviderTest {
 
     @IsTest
-    static void getConfigsReadsActiveMetadataTest() {
-        List<RollupHelper.RollupConfig> configs = RollupConfigProvider.getConfigs('Opportunity');
+    static void fromMetadataMapsFieldsTest() {
+        Rollup_Config__mdt row = new Rollup_Config__mdt();
+        row.ChildObject__c = 'Case';
+        row.RelationshipField__c = 'AccountId';
+        row.FieldToAggregate__c = null;
+        row.AggregateFunction__c = 'COUNT';
+        row.ParentObject__c = 'Account';
+        row.TargetField__c = 'Nb_Cases__c';
+        row.FilterCriteria__c = 'Status != \'Closed\'';
+        row.ParentFilter__c = null;
+        row.WatchedFields__c = 'Status, AccountId';
 
-        System.assert(!configs.isEmpty(), 'Le provider doit lire le record metadata exemple Opportunity');
-        RollupHelper.RollupConfig config = configs[0];
-        System.assertEquals('Opportunity', config.childObject);
+        RollupHelper.RollupConfig config = RollupConfigProvider.fromMetadata(row);
+
+        System.assertEquals('Case', config.childObject);
         System.assertEquals('AccountId', config.relationshipField);
-        System.assertEquals('Amount', config.fieldToAggregate);
-        System.assertEquals('SUM', config.aggregateFunction);
+        System.assertEquals(null, config.fieldToAggregate);
+        System.assertEquals('COUNT', config.aggregateFunction);
         System.assertEquals('Account', config.parentObject);
-        System.assertEquals('Total_CA__c', config.targetField);
-        System.assertEquals(new Set<String>{ 'Amount' }, config.watchedFields);
+        System.assertEquals('Nb_Cases__c', config.targetField);
+        System.assertEquals('Status != \'Closed\'', config.filterCriteria);
+        System.assertEquals(new Set<String>{ 'Status', 'AccountId' }, config.watchedFields);
     }
 
     @IsTest

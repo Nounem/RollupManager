@@ -24,14 +24,14 @@ private class RollupHelperTest {
         c.fieldToAggregate  = 'Amount';
         c.aggregateFunction = 'SUM';
         c.parentObject      = 'Account';
-        c.targetField       = 'Total_CA__c';
+        c.targetField       = 'AnnualRevenue';
         c.filterCriteria    = null;
         c.alwaysRecalculate = false;
         return c;
     }
 
     static Account getAccount(String name) {
-        return [SELECT Id, Total_CA__c FROM Account WHERE Name = :name LIMIT 1];
+        return [SELECT Id, AnnualRevenue FROM Account WHERE Name = :name LIMIT 1];
     }
 
     static Opportunity buildOpp(Id accId, Decimal amount, String stage) {
@@ -59,7 +59,7 @@ private class RollupHelperTest {
         RollupHelper.calculate(buildConfig(), opps, null, true, false, false, false);
         Test.stopTest();
 
-        System.assertEquals(300, getAccount('Compte A').Total_CA__c, 'SUM après INSERT doit être 300');
+        System.assertEquals(300, getAccount('Compte A').AnnualRevenue, 'SUM après INSERT doit être 300');
     }
 
     // ─── Cas 2 : UPDATE du champ agrégé ───────────────────────────────────────
@@ -81,7 +81,7 @@ private class RollupHelperTest {
         RollupHelper.calculate(buildConfig(), newList, oldList, false, true, false, false);
         Test.stopTest();
 
-        System.assertEquals(800, getAccount('Compte A').Total_CA__c, 'Total doit refléter le nouveau montant');
+        System.assertEquals(800, getAccount('Compte A').AnnualRevenue, 'Total doit refléter le nouveau montant');
     }
 
     // ─── Cas 3 : UPDATE sans changement pertinent — aucun recalcul ────────────
@@ -96,7 +96,7 @@ private class RollupHelperTest {
         RollupHelper.calculate(buildConfig(), new List<SObject>{ opp }, null, true, false, false, false);
 
         // Forcer le champ cible à null pour détecter si le moteur le remet à jour
-        update new Account(Id = acc.Id, Total_CA__c = null);
+        update new Account(Id = acc.Id, AnnualRevenue = null);
 
         // Modifier uniquement Description (hors config) — Amount et AccountId restent identiques
         List<Opportunity> before = [SELECT Id, AccountId, Amount FROM Opportunity WHERE Id = :opp.Id];
@@ -108,8 +108,8 @@ private class RollupHelperTest {
         RollupHelper.calculate(buildConfig(), after, before, false, true, false, false);
         Test.stopTest();
 
-        // Le moteur n'a rien fait : Total_CA__c reste null
-        System.assertEquals(null, getAccount('Compte A').Total_CA__c,
+        // Le moteur n'a rien fait : AnnualRevenue reste null
+        System.assertEquals(null, getAccount('Compte A').AnnualRevenue,
             'Aucun recalcul si le champ agrégé et la relation sont inchangés');
     }
 
@@ -122,7 +122,7 @@ private class RollupHelperTest {
         Opportunity opp = buildOpp(accA.Id, 1000, 'Prospecting');
         insert opp;
         RollupHelper.calculate(buildConfig(), new List<SObject>{ opp }, null, true, false, false, false);
-        System.assertEquals(1000, getAccount('Compte A').Total_CA__c, 'Pré-condition : A = 1000');
+        System.assertEquals(1000, getAccount('Compte A').AnnualRevenue, 'Pré-condition : A = 1000');
 
         List<Opportunity> oldList = [SELECT Id, AccountId, Amount FROM Opportunity WHERE Id = :opp.Id];
         opp.AccountId = accB.Id;
@@ -133,8 +133,8 @@ private class RollupHelperTest {
         RollupHelper.calculate(buildConfig(), newList, oldList, false, true, false, false);
         Test.stopTest();
 
-        System.assertEquals(0,    getAccount('Compte A').Total_CA__c, 'Compte A doit être remis à 0');
-        System.assertEquals(1000, getAccount('Compte B').Total_CA__c, 'Compte B doit recevoir 1000');
+        System.assertEquals(0,    getAccount('Compte A').AnnualRevenue, 'Compte A doit être remis à 0');
+        System.assertEquals(1000, getAccount('Compte B').AnnualRevenue, 'Compte B doit recevoir 1000');
     }
 
     // ─── Cas 5 : DELETE — le total diminue ────────────────────────────────────
@@ -145,7 +145,7 @@ private class RollupHelperTest {
         Opportunity opp = buildOpp(acc.Id, 400, 'Prospecting');
         insert opp;
         RollupHelper.calculate(buildConfig(), new List<SObject>{ opp }, null, true, false, false, false);
-        System.assertEquals(400, getAccount('Compte A').Total_CA__c, 'Pré-condition : A = 400');
+        System.assertEquals(400, getAccount('Compte A').AnnualRevenue, 'Pré-condition : A = 400');
 
         List<Opportunity> deleted = [SELECT Id, AccountId, Amount FROM Opportunity WHERE Id = :opp.Id];
         delete opp;
@@ -154,7 +154,7 @@ private class RollupHelperTest {
         RollupHelper.calculate(buildConfig(), null, deleted, false, false, true, false);
         Test.stopTest();
 
-        System.assertEquals(0, getAccount('Compte A').Total_CA__c, 'Total après DELETE doit être 0');
+        System.assertEquals(0, getAccount('Compte A').AnnualRevenue, 'Total après DELETE doit être 0');
     }
 
     // ─── Cas 6 : UNDELETE — le total est restauré ─────────────────────────────
@@ -173,7 +173,7 @@ private class RollupHelperTest {
         RollupHelper.calculate(buildConfig(), restored, null, false, false, false, true);
         Test.stopTest();
 
-        System.assertEquals(600, getAccount('Compte A').Total_CA__c, 'Total après UNDELETE doit être 600');
+        System.assertEquals(600, getAccount('Compte A').AnnualRevenue, 'Total après UNDELETE doit être 600');
     }
 
     // ─── Cas 7 : BULK 200 enregistrements — governor limits ───────────────────
@@ -191,7 +191,7 @@ private class RollupHelperTest {
         RollupHelper.calculate(buildConfig(), opps, null, true, false, false, false);
         Test.stopTest();
 
-        System.assertEquals(2000, getAccount('Compte A').Total_CA__c, '200 × 10 = 2000');
+        System.assertEquals(2000, getAccount('Compte A').AnnualRevenue, '200 × 10 = 2000');
     }
 
     // ─── Cas 8 : filtre actif — seuls les enregistrements filtrés comptent ─────
@@ -213,7 +213,7 @@ private class RollupHelperTest {
         RollupHelper.calculate(config, opps, null, true, false, false, false);
         Test.stopTest();
 
-        System.assertEquals(500, getAccount('Compte A').Total_CA__c,
+        System.assertEquals(500, getAccount('Compte A').AnnualRevenue,
             'Seul le Closed Won (500) doit être compté');
     }
 
@@ -237,7 +237,7 @@ private class RollupHelperTest {
         RollupHelper.calculate(config, opps, null, true, false, false, false);
         Test.stopTest();
 
-        System.assertEquals(3, getAccount('Compte A').Total_CA__c, 'COUNT doit retourner 3');
+        System.assertEquals(3, getAccount('Compte A').AnnualRevenue, 'COUNT doit retourner 3');
     }
 
     // ─── Cas 10 : relation nulle — aucune exception ───────────────────────────
@@ -265,14 +265,14 @@ private class RollupHelperTest {
         insert opp;
 
         // Simuler une exécution en cours pour cette clé
-        RollupHelper.RUNNING.add('Opportunity:Total_CA__c');
+        RollupHelper.RUNNING.add('Opportunity:AnnualRevenue');
 
         Test.startTest();
         RollupHelper.calculate(buildConfig(), new List<SObject>{ opp }, null, true, false, false, false);
         Test.stopTest();
 
-        // Le moteur a retourné immédiatement → Total_CA__c reste null
-        System.assertEquals(null, getAccount('Compte A').Total_CA__c,
+        // Le moteur a retourné immédiatement → AnnualRevenue reste null
+        System.assertEquals(null, getAccount('Compte A').AnnualRevenue,
             'La récursion doit être bloquée par le guard');
 
         // Nettoyage explicite pour ne pas affecter d'autres tests
@@ -338,7 +338,7 @@ private class RollupHelperTest {
         RollupHelper.RollupConfig configCount = buildConfig();
         configCount.aggregateFunction = 'COUNT';
         configCount.fieldToAggregate  = null;
-        configCount.targetField       = 'Total_CA__c'; // réutilise le même champ pour le test
+        configCount.targetField       = 'AnnualRevenue'; // réutilise le même champ pour le test
 
         List<RollupHelper.RollupConfig> configs = new List<RollupHelper.RollupConfig>{
             configSum, configCount
@@ -349,7 +349,7 @@ private class RollupHelperTest {
         Test.stopTest();
 
         // Le dernier rollup (COUNT = 2) écrase le premier (SUM = 300) — comportement attendu
-        System.assertEquals(2, getAccount('Compte A').Total_CA__c,
+        System.assertEquals(2, getAccount('Compte A').AnnualRevenue,
             'calculateAll exécute les configs dans l\'ordre, le COUNT écrase le SUM');
     }
 
@@ -375,11 +375,11 @@ private class RollupHelperTest {
         RollupHelper.calculate(config, opps, null, true, false, false, false);
         Test.stopTest();
 
-        Account resParis = [SELECT Total_CA__c FROM Account WHERE Id = :paris.Id];
-        Account resLyon  = [SELECT Total_CA__c FROM Account WHERE Id = :lyon.Id];
+        Account resParis = [SELECT AnnualRevenue FROM Account WHERE Id = :paris.Id];
+        Account resLyon  = [SELECT AnnualRevenue FROM Account WHERE Id = :lyon.Id];
 
-        System.assertEquals(500,  resParis.Total_CA__c, 'Paris (éligible) doit avoir 500');
-        System.assertEquals(null, resLyon.Total_CA__c,  'Lyon (exclu par parentFilter) ne doit pas être touché');
+        System.assertEquals(500,  resParis.AnnualRevenue, 'Paris (éligible) doit avoir 500');
+        System.assertEquals(null, resLyon.AnnualRevenue,  'Lyon (exclu par parentFilter) ne doit pas être touché');
     }
 
     // ─── Cas 15 : parentFilter — aucun parent éligible, aucun DML ─────────────
@@ -397,56 +397,35 @@ private class RollupHelperTest {
         RollupHelper.calculate(config, opps, null, true, false, false, false);
         Test.stopTest();
 
-        System.assertEquals(null, getAccount('Compte A').Total_CA__c,
+        System.assertEquals(null, getAccount('Compte A').AnnualRevenue,
             'Aucun DML si aucun parent ne passe le parentFilter');
     }
 
-    // ─── Cas 16 : plusieurs enfants différents → même parent ──────────────────
-    // Simule deux triggers indépendants (Opportunity + Case) qui mettent à jour
-    // des champs différents sur Account. Les calculs sont indépendants.
+    // ─── Cas 16 : plusieurs rollups sequentiels vers le meme parent ───────────
 
     @isTest
-    static void testMultipleChildObjects() {
+    static void testSequentialRollupsCanReuseTargetField() {
         Account acc = getAccount('Compte A');
 
-        // Rollup 1 : SUM Amount des Opportunités → Total_CA__c
         List<Opportunity> opps = new List<Opportunity>{
             buildOpp(acc.Id, 400, 'Prospecting'),
             buildOpp(acc.Id, 600, 'Prospecting')
         };
         insert opps;
 
-        // Rollup 2 : COUNT Cases → simulé via un second appel avec une config COUNT
-        // (en prod ce serait un second trigger CaseRollupTrigger)
-        List<Case> cases = new List<Case>{
-            new Case(AccountId = acc.Id, Subject = 'Case 1', Status = 'New', Origin = 'Email'),
-            new Case(AccountId = acc.Id, Subject = 'Case 2', Status = 'New', Origin = 'Email')
-        };
-        insert cases;
+        RollupHelper.RollupConfig configSum = buildConfig();
 
-        RollupHelper.RollupConfig configOpp = buildConfig();
-
-        RollupHelper.RollupConfig configCase = new RollupHelper.RollupConfig();
-        configCase.childObject       = 'Case';
-        configCase.relationshipField = 'AccountId';
-        configCase.fieldToAggregate  = null;
-        configCase.aggregateFunction = 'COUNT';
-        configCase.parentObject      = 'Account';
-        configCase.targetField       = 'Total_CA__c'; // réutilise Total_CA__c pour éviter un second champ custom dans le test
-        configCase.filterCriteria    = null;
-        configCase.alwaysRecalculate = false;
+        RollupHelper.RollupConfig configCount = buildConfig();
+        configCount.aggregateFunction = 'COUNT';
+        configCount.fieldToAggregate = null;
 
         Test.startTest();
-        // Simule le trigger Opportunity
-        RollupHelper.calculate(configOpp, opps, null, true, false, false, false);
-        // Simule le trigger Case — clé différente, pas de conflit de récursion
-        RollupHelper.calculate(configCase, cases, null, true, false, false, false);
+        RollupHelper.calculate(configSum, opps, null, true, false, false, false);
+        RollupHelper.calculate(configCount, opps, null, true, false, false, false);
         Test.stopTest();
 
-        // Le COUNT(Case) = 2 a écrasé le SUM(Amount) = 1000
-        // En prod les deux configs ciblent des champs différents — pas d'écrasement
-        System.assertEquals(2, getAccount('Compte A').Total_CA__c,
-            'Le second rollup (COUNT Case) écrase le premier car ils ciblent le même champ dans ce test');
+        System.assertEquals(2, getAccount('Compte A').AnnualRevenue,
+            'Le second rollup COUNT ecrase le SUM car ils ciblent le meme champ dans ce test');
     }
 
     @isTest
@@ -465,7 +444,7 @@ private class RollupHelperTest {
         RollupHelper.calculate(config, opps, null, true, false, false, false);
         Test.stopTest();
 
-        System.assertEquals(300, getAccount('Compte A').Total_CA__c,
+        System.assertEquals(300, getAccount('Compte A').AnnualRevenue,
             'La fonction en minuscule doit etre normalisee');
     }
 
@@ -481,10 +460,10 @@ private class RollupHelperTest {
         config.watchedFields = new Set<String>{ 'StageName' };
 
         RollupHelper.calculate(config, new List<SObject>{ opp }, null, true, false, false, false);
-        System.assertEquals(0, getAccount('Compte A').Total_CA__c,
+        System.assertEquals(0, getAccount('Compte A').AnnualRevenue,
             'Prospecting ne doit pas passer le filtre Closed Won');
 
-        update new Account(Id = acc.Id, Total_CA__c = null);
+        update new Account(Id = acc.Id, AnnualRevenue = null);
 
         List<Opportunity> beforeDescription = [
             SELECT Id, AccountId, Amount, StageName FROM Opportunity WHERE Id = :opp.Id
@@ -496,7 +475,7 @@ private class RollupHelperTest {
         ];
 
         RollupHelper.calculate(config, afterDescription, beforeDescription, false, true, false, false);
-        System.assertEquals(null, getAccount('Compte A').Total_CA__c,
+        System.assertEquals(null, getAccount('Compte A').AnnualRevenue,
             'Un champ non surveille ne doit pas declencher le recalcul');
 
         List<Opportunity> beforeStage = [
@@ -509,7 +488,7 @@ private class RollupHelperTest {
         ];
 
         RollupHelper.calculate(config, afterStage, beforeStage, false, true, false, false);
-        System.assertEquals(100, getAccount('Compte A').Total_CA__c,
+        System.assertEquals(100, getAccount('Compte A').AnnualRevenue,
             'Le changement de StageName doit declencher le recalcul');
     }
 
@@ -523,14 +502,14 @@ private class RollupHelperTest {
         config.aggregateFunction = 'AVG';
 
         RollupHelper.calculate(config, new List<SObject>{ opp }, null, true, false, false, false);
-        System.assertEquals(100, getAccount('Compte A').Total_CA__c,
+        System.assertEquals(100, getAccount('Compte A').AnnualRevenue,
             'Pre-condition : AVG doit valoir 100');
 
         List<Opportunity> deleted = [SELECT Id, AccountId, Amount FROM Opportunity WHERE Id = :opp.Id];
         delete opp;
 
         RollupHelper.calculate(config, null, deleted, false, false, true, false);
-        System.assertEquals(null, getAccount('Compte A').Total_CA__c,
+        System.assertEquals(null, getAccount('Compte A').AnnualRevenue,
             'AVG sans enfant correspondant doit remettre le champ a null');
     }
 
@@ -568,9 +547,11 @@ private class RollupHelperTest {
         RollupHelper.calculateAll(configs, opps, null, true, false, false, false);
         Test.stopTest();
 
-        System.assertEquals(300, getAccount('Compte A').Total_CA__c,
+        System.assertEquals(300, getAccount('Compte A').AnnualRevenue,
             'La config valide doit s executer meme si une autre config est invalide');
         System.assertEquals(1, RollupHelper.LAST_ERRORS.size(),
             'La config invalide doit etre loggee sans bloquer les suivantes');
     }
 }
+
+

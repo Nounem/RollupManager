@@ -29,7 +29,7 @@ Moteur générique de calcul rollup entre deux objets Salesforce.
 - ✅ Validation Schema.Describe des objets et champs configurés
 - ✅ Une config invalide est ignorée sans bloquer les autres rollups
 - ✅ `Database.update(allOrNone: false)` — un parent en erreur ne bloque pas les autres
-- ✅ 26 tests unitaires — couverture > 85 %
+- ✅ Tests unitaires pour le moteur, le provider metadata et le rollup Account
 
 ---
 
@@ -65,7 +65,7 @@ sf project deploy start --source-dir force-app --target-org mon-org
 ### 4. Lancer les tests
 
 ```bash
-sf apex run test --class-names RollupHelperTest,RollupConfigProviderTest,OpportunityRollupTriggerHandlerTest --target-org mon-org --result-format human --wait 5
+sf apex run test --class-names RollupHelperTest,RollupConfigProviderTest,AccountProfilClientRollupHelperTest --target-org mon-org --result-format human --wait 5
 ```
 
 ---
@@ -113,70 +113,78 @@ Si une ligne metadata est mal renseignée, elle est loggée puis ignorée. Les a
 ```apex
 RollupHelper.RollupConfig config = new RollupHelper.RollupConfig();
 
-config.childObject        = 'Opportunity';  // API name objet enfant
+config.childObject        = 'Case';         // API name objet enfant
 config.relationshipField  = 'AccountId';    // champ de relation sur l'enfant
-config.fieldToAggregate   = 'Amount';       // champ à agréger (null si COUNT)
-config.aggregateFunction  = 'SUM';          // SUM | COUNT | MIN | MAX | AVG
+config.fieldToAggregate   = null;           // champ à agréger (null si COUNT)
+config.aggregateFunction  = 'COUNT';        // SUM | COUNT | MIN | MAX | AVG
 config.parentObject       = 'Account';      // API name objet parent
-config.targetField        = 'Total_CA__c';  // champ cible sur le parent
+config.targetField        = 'Nb_Cases__c';  // champ cible sur le parent
 config.filterCriteria     = null;           // filtre sur les enfants (null = tous)
 config.parentFilter       = null;           // filtre sur les parents (null = tous)
 config.alwaysRecalculate  = false;          // true si filterCriteria porte sur un champ autre que fieldToAggregate
-config.watchedFields      = new Set<String>{ 'Amount' }; // champs enfant surveillés sur UPDATE
+config.watchedFields      = new Set<String>{ 'Status' }; // champs enfant surveillés sur UPDATE
 config.throwOnError       = false;          // true pour lever une exception si un parent echoue au DML
 ```
 
-### Trigger template
+### Trigger Account template
 
 ```apex
-trigger OpportunityRollupTrigger on Opportunity (
+trigger AccountRollupTrigger on Account (
     after insert, after update, after delete, after undelete
 ) {
-    OpportunityRollupTriggerHandler.run();
+    AccountRollupTriggerHandler.run();
 }
 ```
 
-### Handler template
+### Handler Account template
 
 ```apex
-public class OpportunityRollupTriggerHandler {
+public class AccountRollupTriggerHandler {
     public static void run() {
         if (RollupTriggerControl.disabled) return;
 
-        RollupHelper.calculateAll(
-            buildConfigs(),
+        AccountProfilClientHierarchyRollupHelper.recalculate(
             Trigger.new, Trigger.old,
             Trigger.isInsert, Trigger.isUpdate,
             Trigger.isDelete, Trigger.isUndelete
         );
     }
-
-    @TestVisible
-    private static List<RollupHelper.RollupConfig> buildConfigs() {
-        return RollupConfigProvider.getConfigs('Opportunity');
-    }
 }
+```
+
+### Rollup hiérarchique Account vers Profil client
+
+Le cas spécifique `Account -> Profil_client__c` est géré par `AccountProfilClientHierarchyRollupHelper`.
+
+Règle appliquée :
+
+```text
+Profil_client__c.Montant_signe_courtage__c =
+SUM(Account courant + tous ses descendants).Montant_signe_courtage__c
+```
+
+Si un compte enfant change, le helper recalcule son profil client, puis le profil client du parent, du grand-parent, etc.
+
+Important : `Profil_client__c.Montant_signe_courtage__c` doit être un champ `Currency` modifiable. Tant qu'il reste une formule, le helper ne bloque pas le DML Account mais ne peut pas écrire la valeur.
+
+Configuration livree dans le repository :
+
+```text
+Rollup_Config.Account_To_Profil_Montant
+ChildObject__c        = Account
+RelationshipField__c = profil_client__c
+FieldToAggregate__c  = Montant_signe_courtage__c
+AggregateFunction__c = SUM
+ParentObject__c      = Profil_client__c
+TargetField__c       = Montant_signe_courtage__c
+WatchedFields__c     = ParentId,profil_client__c,Montant_signe_courtage__c
 ```
 
 ---
 
 ## Exemples
 
-### SUM des Opportunités gagnées → Account (type Client uniquement)
-
-```apex
-config.childObject       = 'Opportunity';
-config.relationshipField = 'AccountId';
-config.fieldToAggregate  = 'Amount';
-config.aggregateFunction = 'SUM';
-config.parentObject      = 'Account';
-config.targetField       = 'Total_CA_Client__c';
-config.filterCriteria    = 'StageName = \'Closed Won\'';
-config.parentFilter      = 'RecordType.DeveloperName = \'Client\'';
-config.watchedFields     = new Set<String>{ 'Amount', 'StageName' };
-```
-
-### COUNT des Cases ouverts → Account
+### COUNT des Cases ouverts vers Account
 
 ```apex
 config.childObject       = 'Case';
@@ -204,7 +212,7 @@ config.parentFilter      = null;
 config.alwaysRecalculate = false;
 ```
 
-### Plusieurs rollups sur le même objet (un seul trigger)
+### Plusieurs rollups sur le même objet
 
 ```apex
 // Rollup 1
@@ -214,7 +222,7 @@ configs.add(c1);
 
 // Rollup 2
 RollupHelper.RollupConfig c2 = new RollupHelper.RollupConfig();
-c2.targetField = 'Nb_Opportunites__c'; c2.aggregateFunction = 'COUNT'; ...
+c2.targetField = 'Nb_Cases_Ouverts__c'; c2.aggregateFunction = 'COUNT'; ...
 configs.add(c2);
 ```
 
@@ -233,20 +241,22 @@ force-app/main/default/
 │   ├── RollupConfigProvider.cls-meta.xml
 │   ├── RollupConfigProviderTest.cls
 │   ├── RollupConfigProviderTest.cls-meta.xml
-│   ├── OpportunityRollupTriggerHandler.cls      ← handler Account / Opportunity
-│   ├── OpportunityRollupTriggerHandler.cls-meta.xml
-│   ├── OpportunityRollupTriggerHandlerTest.cls  ← tests du handler
-│   └── OpportunityRollupTriggerHandlerTest.cls-meta.xml
+│   ├── AccountRollupTriggerHandler.cls          ← handler Account
+│   ├── AccountRollupTriggerHandler.cls-meta.xml
+│   ├── AccountProfilClientHierarchyRollupHelper.cls
+│   ├── AccountProfilClientHierarchyRollupHelper.cls-meta.xml
+│   ├── AccountProfilClientRollupHelperTest.cls  ← tests du rollup Account
+│   └── AccountProfilClientRollupHelperTest.cls-meta.xml
 ├── triggers/
-│   ├── OpportunityRollupTrigger.trigger      ← délégation au handler
-│   └── OpportunityRollupTrigger.trigger-meta.xml
+│   ├── AccountRollupTrigger.trigger          ← délégation au handler
+│   └── AccountRollupTrigger.trigger-meta.xml
 ├── objects/
 │   ├── Rollup_Config__mdt/                    ← custom metadata type
 │   │   └── fields/                            ← champs avec aide utilisateur
 │   └── Account/fields/
 │       └── Total_CA__c.field-meta.xml         ← exemple de champ cible
 └── customMetadata/
-    └── Rollup_Config.Opportunity_Amount_To_Account_Total_CA.md-meta.xml
+    └── Rollup_Config.Account_To_Profil_Montant.md-meta.xml
 ```
 
 ---
