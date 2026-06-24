@@ -4,6 +4,12 @@
 *.dup
 package.zip
 
+# Local org-specific Apex kept out of the public RollupManager repository
+force-app/main/default/classes/AccountHierarchyHelper.cls
+force-app/main/default/classes/AccountHierarchyHelper.cls-meta.xml
+force-app/main/default/classes/AccountHierarchyHelperTest.cls
+force-app/main/default/classes/AccountHierarchyHelperTest.cls-meta.xml
+
 # IDE
 .vscode/
 *.swp
