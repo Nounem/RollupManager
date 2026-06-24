@@ -1,6 +1,10 @@
 @isTest
 private class RollupHelperTest {
 
+    static {
+        RollupTriggerControl.disabled = true;
+    }
+
     // ─── Données partagées entre tous les tests ────────────────────────────────
 
     @TestSetup
@@ -443,5 +447,103 @@ private class RollupHelperTest {
         // En prod les deux configs ciblent des champs différents — pas d'écrasement
         System.assertEquals(2, getAccount('Compte A').Total_CA__c,
             'Le second rollup (COUNT Case) écrase le premier car ils ciblent le même champ dans ce test');
+    }
+
+    @isTest
+    static void testAggregateFunctionIsNormalized() {
+        Account acc = getAccount('Compte A');
+        List<Opportunity> opps = new List<Opportunity>{
+            buildOpp(acc.Id, 100, 'Prospecting'),
+            buildOpp(acc.Id, 200, 'Prospecting')
+        };
+        insert opps;
+
+        RollupHelper.RollupConfig config = buildConfig();
+        config.aggregateFunction = 'sum';
+
+        Test.startTest();
+        RollupHelper.calculate(config, opps, null, true, false, false, false);
+        Test.stopTest();
+
+        System.assertEquals(300, getAccount('Compte A').Total_CA__c,
+            'La fonction en minuscule doit etre normalisee');
+    }
+
+    @isTest
+    static void testWatchedFieldsLimitUpdateRecalculation() {
+        Account acc = getAccount('Compte A');
+        Opportunity opp = buildOpp(acc.Id, 100, 'Prospecting');
+        insert opp;
+
+        RollupHelper.RollupConfig config = buildConfig();
+        config.filterCriteria = 'StageName = \'Closed Won\'';
+        config.alwaysRecalculate = false;
+        config.watchedFields = new Set<String>{ 'StageName' };
+
+        RollupHelper.calculate(config, new List<SObject>{ opp }, null, true, false, false, false);
+        System.assertEquals(0, getAccount('Compte A').Total_CA__c,
+            'Prospecting ne doit pas passer le filtre Closed Won');
+
+        update new Account(Id = acc.Id, Total_CA__c = null);
+
+        List<Opportunity> beforeDescription = [
+            SELECT Id, AccountId, Amount, StageName FROM Opportunity WHERE Id = :opp.Id
+        ];
+        opp.Description = 'Description only';
+        update opp;
+        List<Opportunity> afterDescription = [
+            SELECT Id, AccountId, Amount, StageName FROM Opportunity WHERE Id = :opp.Id
+        ];
+
+        RollupHelper.calculate(config, afterDescription, beforeDescription, false, true, false, false);
+        System.assertEquals(null, getAccount('Compte A').Total_CA__c,
+            'Un champ non surveille ne doit pas declencher le recalcul');
+
+        List<Opportunity> beforeStage = [
+            SELECT Id, AccountId, Amount, StageName FROM Opportunity WHERE Id = :opp.Id
+        ];
+        opp.StageName = 'Closed Won';
+        update opp;
+        List<Opportunity> afterStage = [
+            SELECT Id, AccountId, Amount, StageName FROM Opportunity WHERE Id = :opp.Id
+        ];
+
+        RollupHelper.calculate(config, afterStage, beforeStage, false, true, false, false);
+        System.assertEquals(100, getAccount('Compte A').Total_CA__c,
+            'Le changement de StageName doit declencher le recalcul');
+    }
+
+    @isTest
+    static void testAverageReturnsNullWithoutMatchingChildren() {
+        Account acc = getAccount('Compte A');
+        Opportunity opp = buildOpp(acc.Id, 100, 'Prospecting');
+        insert opp;
+
+        RollupHelper.RollupConfig config = buildConfig();
+        config.aggregateFunction = 'AVG';
+
+        RollupHelper.calculate(config, new List<SObject>{ opp }, null, true, false, false, false);
+        System.assertEquals(100, getAccount('Compte A').Total_CA__c,
+            'Pre-condition : AVG doit valoir 100');
+
+        List<Opportunity> deleted = [SELECT Id, AccountId, Amount FROM Opportunity WHERE Id = :opp.Id];
+        delete opp;
+
+        RollupHelper.calculate(config, null, deleted, false, false, true, false);
+        System.assertEquals(null, getAccount('Compte A').Total_CA__c,
+            'AVG sans enfant correspondant doit remettre le champ a null');
+    }
+
+    @isTest
+    static void testSchemaValidationForUnknownField() {
+        RollupHelper.RollupConfig config = buildConfig();
+        config.fieldToAggregate = 'Champ_Inexistant__c';
+
+        try {
+            RollupHelper.calculate(config, new List<SObject>(), null, true, false, false, false);
+            System.assert(false, 'RollupException attendue pour champ inexistant');
+        } catch (RollupHelper.RollupException e) {
+            System.assert(e.getMessage().contains('champ introuvable'), e.getMessage());
+        }
     }
 }

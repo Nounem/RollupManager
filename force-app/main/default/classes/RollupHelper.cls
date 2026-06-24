@@ -33,6 +33,8 @@ public without sharing class RollupHelper {
         // (ex : filtre sur StageName mais on agrège Amount).
         // Par défaut false : recalcul uniquement si fieldToAggregate ou relationshipField change.
         public Boolean alwaysRecalculate = false;
+        public Set<String> watchedFields;
+        public Boolean throwOnError = false;
     }
 
     public class RollupException extends Exception {}
@@ -48,6 +50,7 @@ public without sharing class RollupHelper {
         Boolean       isDelete,
         Boolean       isUndelete
     ) {
+        normalizeConfig(config);
         assertConfig(config);
 
         String key = config.childObject + ':' + config.targetField;
@@ -121,9 +124,7 @@ public without sharing class RollupHelper {
                 Boolean relationChanged = newPid != oldPid;
 
                 // COUNT ne dépend d'aucun champ agrégé : seule la relation compte
-                Boolean valueChanged = !config.alwaysRecalculate
-                    && config.aggregateFunction != 'COUNT'
-                    && newList[i].get(config.fieldToAggregate) != oldList[i].get(config.fieldToAggregate);
+                Boolean valueChanged = hasWatchedFieldChanged(config, newList[i], oldList[i]);
 
                 // alwaysRecalculate : recalcul systématique si le filterCriteria
                 // porte sur un champ autre que fieldToAggregate
@@ -143,7 +144,8 @@ public without sharing class RollupHelper {
 
     private static Map<Id, Decimal> aggregate(RollupConfig config, Set<Id> parentIds) {
         Map<Id, Decimal> valueMap = new Map<Id, Decimal>();
-        for (Id pid : parentIds) valueMap.put(pid, 0); // parents sans enfants correspondants → 0
+        Decimal defaultValue = defaultValueFor(config);
+        for (Id pid : parentIds) valueMap.put(pid, defaultValue);
 
         String aggExpr = config.aggregateFunction == 'COUNT'
             ? 'COUNT(Id)'
@@ -187,7 +189,7 @@ public without sharing class RollupHelper {
 
         for (Id pid : parentIds) {
             SObject parent = parentType.newSObject(pid);
-            parent.put(config.targetField, valueMap.containsKey(pid) ? valueMap.get(pid) : 0);
+            parent.put(config.targetField, valueMap.containsKey(pid) ? valueMap.get(pid) : defaultValueFor(config));
             toUpdate.add(parent);
         }
 
@@ -203,6 +205,12 @@ public without sharing class RollupHelper {
                     + ' [' + config.parentObject + '.' + config.targetField + '] : '
                     + results[i].getErrors()[0].getMessage()
                 );
+                if (config.throwOnError == true) {
+                    throw new RollupException(
+                        'Echec parent ' + toUpdate[i].Id + ' [' + config.parentObject + '.'
+                        + config.targetField + '] : ' + results[i].getErrors()[0].getMessage()
+                    );
+                }
             }
         }
     }
@@ -230,6 +238,12 @@ public without sharing class RollupHelper {
         return SOBJECT_CACHE.get(objectName);
     }
 
+    private static void normalizeConfig(RollupConfig c) {
+        if (c != null && String.isNotBlank(c.aggregateFunction)) {
+            c.aggregateFunction = c.aggregateFunction.toUpperCase();
+        }
+    }
+
     private static void assertConfig(RollupConfig c) {
         if (c == null)                           throw new RollupException('config est null');
         if (String.isBlank(c.childObject))       throw new RollupException('childObject est obligatoire');
@@ -244,5 +258,95 @@ public without sharing class RollupHelper {
         if (!valid.contains(c.aggregateFunction.toUpperCase())) {
             throw new RollupException('aggregateFunction invalide : ' + c.aggregateFunction);
         }
+        assertSchema(c);
+    }
+
+    private static void assertSchema(RollupConfig c) {
+        Schema.SObjectType childType = getSObjectType(c.childObject);
+        if (childType == null) {
+            throw new RollupException('childObject introuvable : ' + c.childObject);
+        }
+
+        Schema.SObjectType parentType = getSObjectType(c.parentObject);
+        if (parentType == null) {
+            throw new RollupException('parentObject introuvable : ' + c.parentObject);
+        }
+
+        Map<String, Schema.SObjectField> childFields = childType.getDescribe().fields.getMap();
+        Map<String, Schema.SObjectField> parentFields = parentType.getDescribe().fields.getMap();
+
+        assertFieldExists(childFields, c.childObject, c.relationshipField);
+        assertFieldExists(parentFields, c.parentObject, c.targetField);
+
+        Schema.DescribeFieldResult targetDescribe = parentFields.get(c.targetField).getDescribe();
+        if (!isNumeric(targetDescribe)) {
+            throw new RollupException('targetField doit etre numerique : ' + c.parentObject + '.' + c.targetField);
+        }
+
+        if (c.aggregateFunction != 'COUNT') {
+            assertFieldExists(childFields, c.childObject, c.fieldToAggregate);
+            Schema.DescribeFieldResult aggregateDescribe = childFields.get(c.fieldToAggregate).getDescribe();
+            if (!isNumeric(aggregateDescribe)) {
+                throw new RollupException(
+                    'fieldToAggregate doit etre numerique pour ' + c.aggregateFunction
+                    + ' : ' + c.childObject + '.' + c.fieldToAggregate
+                );
+            }
+        }
+
+        if (c.watchedFields != null) {
+            for (String fieldName : c.watchedFields) {
+                assertFieldExists(childFields, c.childObject, fieldName);
+            }
+        }
+    }
+
+    private static void assertFieldExists(
+        Map<String, Schema.SObjectField> fields,
+        String objectName,
+        String fieldName
+    ) {
+        if (String.isBlank(fieldName) || !fields.containsKey(fieldName)) {
+            throw new RollupException('champ introuvable : ' + objectName + '.' + fieldName);
+        }
+    }
+
+    private static Boolean isNumeric(Schema.DescribeFieldResult fieldDescribe) {
+        Schema.DisplayType type = fieldDescribe.getType();
+        return type == Schema.DisplayType.Currency
+            || type == Schema.DisplayType.Double
+            || type == Schema.DisplayType.Integer
+            || type == Schema.DisplayType.Long
+            || type == Schema.DisplayType.Percent;
+    }
+
+    private static Boolean hasWatchedFieldChanged(
+        RollupConfig config,
+        SObject newRec,
+        SObject oldRec
+    ) {
+        if (config.watchedFields != null && !config.watchedFields.isEmpty()) {
+            for (String fieldName : config.watchedFields) {
+                if (fieldChanged(newRec, oldRec, fieldName)) return true;
+            }
+            return false;
+        }
+
+        if (config.aggregateFunction == 'COUNT') return false;
+        return fieldChanged(newRec, oldRec, config.fieldToAggregate);
+    }
+
+    private static Boolean fieldChanged(SObject newRec, SObject oldRec, String fieldName) {
+        try {
+            return newRec.get(fieldName) != oldRec.get(fieldName);
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
+    private static Decimal defaultValueFor(RollupConfig config) {
+        return config.aggregateFunction == 'SUM' || config.aggregateFunction == 'COUNT'
+            ? 0
+            : null;
     }
 }

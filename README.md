@@ -24,9 +24,10 @@ Moteur générique de calcul rollup entre deux objets Salesforce.
 - ✅ **Reparentage** automatique (recalcul ancien + nouveau parent)
 - ✅ **Bulk-safe** — un seul DML quelque soit le volume
 - ✅ **Anti-récursion** intégré par clé de config
-- ✅ Optimisation UPDATE — recalcul uniquement si le champ pertinent a changé
+- ✅ Optimisation UPDATE — recalcul uniquement si les champs surveillés ont changé
+- ✅ Validation Schema.Describe des objets et champs configurés
 - ✅ `Database.update(allOrNone: false)` — un parent en erreur ne bloque pas les autres
-- ✅ 16 tests unitaires — couverture > 85 %
+- ✅ 23 tests unitaires — couverture > 85 %
 
 ---
 
@@ -62,7 +63,7 @@ sf project deploy start --source-dir force-app --target-org mon-org
 ### 4. Lancer les tests
 
 ```bash
-sf apex run test --class-names RollupHelperTest --target-org mon-org --result-format human --wait 5
+sf apex run test --class-names RollupHelperTest,OpportunityRollupTriggerHandlerTest --target-org mon-org --result-format human --wait 5
 ```
 
 ---
@@ -72,18 +73,20 @@ sf apex run test --class-names RollupHelperTest --target-org mon-org --result-fo
 ### Principe
 
 Un fichier à ne jamais modifier : `RollupHelper.cls`.  
-Un trigger par objet enfant : copier le template, renseigner 8 variables, déployer.
+Un trigger par objet enfant : une seule ligne qui délègue à un handler.  
+Une classe handler par objet enfant : elle contient la configuration et appelle le moteur.
 
 ```
 Trigger (objet enfant)
-    └── RollupHelper.calculateAll()
-            ├── Collecte les IDs parent impactés
-            ├── Filtre les parents éligibles (parentFilter)
-            ├── Agrégation SOQL dynamique (filterCriteria)
-            └── Database.update() → champ cible sur le parent
+    └── <ObjetEnfant>RollupTriggerHandler.run()
+            └── RollupHelper.calculateAll()
+                    ├── Collecte les IDs parent impactés
+                    ├── Filtre les parents éligibles (parentFilter)
+                    ├── Agrégation SOQL dynamique (filterCriteria)
+                    └── Database.update() → champ cible sur le parent
 ```
 
-### Les 8 paramètres
+### Les paramètres
 
 ```apex
 RollupHelper.RollupConfig config = new RollupHelper.RollupConfig();
@@ -97,6 +100,8 @@ config.targetField        = 'Total_CA__c';  // champ cible sur le parent
 config.filterCriteria     = null;           // filtre sur les enfants (null = tous)
 config.parentFilter       = null;           // filtre sur les parents (null = tous)
 config.alwaysRecalculate  = false;          // true si filterCriteria porte sur un champ autre que fieldToAggregate
+config.watchedFields      = new Set<String>{ 'Amount' }; // champs enfant surveillés sur UPDATE
+config.throwOnError       = false;          // true pour lever une exception si un parent echoue au DML
 ```
 
 ### Trigger template
@@ -105,26 +110,43 @@ config.alwaysRecalculate  = false;          // true si filterCriteria porte sur 
 trigger OpportunityRollupTrigger on Opportunity (
     after insert, after update, after delete, after undelete
 ) {
-    List<RollupHelper.RollupConfig> configs = new List<RollupHelper.RollupConfig>();
+    OpportunityRollupTriggerHandler.run();
+}
+```
 
-    RollupHelper.RollupConfig config = new RollupHelper.RollupConfig();
-    config.childObject       = 'Opportunity';
-    config.relationshipField = 'AccountId';
-    config.fieldToAggregate  = 'Amount';
-    config.aggregateFunction = 'SUM';
-    config.parentObject      = 'Account';
-    config.targetField       = 'Total_CA__c';
-    config.filterCriteria    = null;
-    config.parentFilter      = null;
-    config.alwaysRecalculate = false;
-    configs.add(config);
+### Handler template
 
-    RollupHelper.calculateAll(
-        configs,
-        Trigger.new, Trigger.old,
-        Trigger.isInsert, Trigger.isUpdate,
-        Trigger.isDelete, Trigger.isUndelete
-    );
+```apex
+public class OpportunityRollupTriggerHandler {
+    public static void run() {
+        if (RollupTriggerControl.disabled) return;
+
+        RollupHelper.calculateAll(
+            buildConfigs(),
+            Trigger.new, Trigger.old,
+            Trigger.isInsert, Trigger.isUpdate,
+            Trigger.isDelete, Trigger.isUndelete
+        );
+    }
+
+    @TestVisible
+    private static List<RollupHelper.RollupConfig> buildConfigs() {
+        List<RollupHelper.RollupConfig> configs = new List<RollupHelper.RollupConfig>();
+
+        RollupHelper.RollupConfig config = new RollupHelper.RollupConfig();
+        config.childObject       = 'Opportunity';
+        config.relationshipField = 'AccountId';
+        config.fieldToAggregate  = 'Amount';
+        config.aggregateFunction = 'SUM';
+        config.parentObject      = 'Account';
+        config.targetField       = 'Total_CA__c';
+        config.filterCriteria    = null;
+        config.parentFilter      = null;
+        config.watchedFields     = new Set<String>{ 'Amount' };
+        configs.add(config);
+
+        return configs;
+    }
 }
 ```
 
@@ -143,7 +165,7 @@ config.parentObject      = 'Account';
 config.targetField       = 'Total_CA_Client__c';
 config.filterCriteria    = 'StageName = \'Closed Won\'';
 config.parentFilter      = 'RecordType.DeveloperName = \'Client\'';
-config.alwaysRecalculate = true;
+config.watchedFields     = new Set<String>{ 'Amount', 'StageName' };
 ```
 
 ### COUNT des Cases ouverts → Account
@@ -157,7 +179,7 @@ config.parentObject      = 'Account';
 config.targetField       = 'Nb_Cases_Ouverts__c';
 config.filterCriteria    = 'Status != \'Closed\'';
 config.parentFilter      = null;
-config.alwaysRecalculate = true;
+config.watchedFields     = new Set<String>{ 'Status' };
 ```
 
 ### SUM sur objets custom
@@ -197,10 +219,14 @@ force-app/main/default/
 ├── classes/
 │   ├── RollupHelper.cls              ← moteur générique (ne pas modifier)
 │   ├── RollupHelper.cls-meta.xml
-│   ├── RollupHelperTest.cls          ← 16 tests unitaires
-│   └── RollupHelperTest.cls-meta.xml
+│   ├── RollupHelperTest.cls          ← tests du moteur générique
+│   ├── RollupHelperTest.cls-meta.xml
+│   ├── OpportunityRollupTriggerHandler.cls      ← configuration Account / Opportunity
+│   ├── OpportunityRollupTriggerHandler.cls-meta.xml
+│   ├── OpportunityRollupTriggerHandlerTest.cls  ← tests du handler
+│   └── OpportunityRollupTriggerHandlerTest.cls-meta.xml
 ├── triggers/
-│   ├── OpportunityRollupTrigger.trigger      ← exemple Account / Opportunity
+│   ├── OpportunityRollupTrigger.trigger      ← délégation au handler
 │   └── OpportunityRollupTrigger.trigger-meta.xml
 └── objects/
     └── Account/fields/
