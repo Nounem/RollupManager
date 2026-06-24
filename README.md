@@ -19,6 +19,7 @@ Moteur générique de calcul rollup entre deux objets Salesforce.
 - ✅ Fonctions : **SUM, COUNT, MIN, MAX, AVG**
 - ✅ Filtre sur les **enfants** (`filterCriteria`)
 - ✅ Filtre sur les **parents** (`parentFilter`) — ex : uniquement les Accounts `Client`
+- ✅ Configuration par **Custom Metadata Type** (`Rollup_Config__mdt`)
 - ✅ **Plusieurs rollups** sur le même objet enfant via `calculateAll()`
 - ✅ Gestion de tous les événements DML : INSERT, UPDATE, DELETE, UNDELETE
 - ✅ **Reparentage** automatique (recalcul ancien + nouveau parent)
@@ -26,8 +27,9 @@ Moteur générique de calcul rollup entre deux objets Salesforce.
 - ✅ **Anti-récursion** intégré par clé de config
 - ✅ Optimisation UPDATE — recalcul uniquement si les champs surveillés ont changé
 - ✅ Validation Schema.Describe des objets et champs configurés
+- ✅ Une config invalide est ignorée sans bloquer les autres rollups
 - ✅ `Database.update(allOrNone: false)` — un parent en erreur ne bloque pas les autres
-- ✅ 23 tests unitaires — couverture > 85 %
+- ✅ 26 tests unitaires — couverture > 85 %
 
 ---
 
@@ -63,7 +65,7 @@ sf project deploy start --source-dir force-app --target-org mon-org
 ### 4. Lancer les tests
 
 ```bash
-sf apex run test --class-names RollupHelperTest,OpportunityRollupTriggerHandlerTest --target-org mon-org --result-format human --wait 5
+sf apex run test --class-names RollupHelperTest,RollupConfigProviderTest,OpportunityRollupTriggerHandlerTest --target-org mon-org --result-format human --wait 5
 ```
 
 ---
@@ -74,7 +76,7 @@ sf apex run test --class-names RollupHelperTest,OpportunityRollupTriggerHandlerT
 
 Un fichier à ne jamais modifier : `RollupHelper.cls`.  
 Un trigger par objet enfant : une seule ligne qui délègue à un handler.  
-Une classe handler par objet enfant : elle contient la configuration et appelle le moteur.
+Une classe handler par objet enfant : elle lit les configs Custom Metadata et appelle le moteur.
 
 ```
 Trigger (objet enfant)
@@ -86,7 +88,27 @@ Trigger (objet enfant)
                     └── Database.update() → champ cible sur le parent
 ```
 
-### Les paramètres
+### Configuration Custom Metadata
+
+Les rollups se configurent dans `Rollup_Config__mdt`. Chaque champ contient une aide utilisateur dans Salesforce Setup.
+
+| Champ | Valeurs / format |
+|---|---|
+| `Active__c` | Coché = config active, décoché = ignorée |
+| `ChildObject__c` | API name enfant : `Opportunity`, `Case`, `Ligne_Commande__c` |
+| `RelationshipField__c` | Champ relation sur l'enfant : `AccountId`, `Commande__c` |
+| `FieldToAggregate__c` | Champ numérique à agréger, vide uniquement pour `COUNT` |
+| `AggregateFunction__c` | `SUM`, `COUNT`, `MIN`, `MAX`, `AVG` |
+| `ParentObject__c` | API name parent : `Account`, `Commande__c` |
+| `TargetField__c` | Champ numérique parent qui reçoit le résultat |
+| `FilterCriteria__c` | Clause SOQL enfant sans `WHERE`, ex : `StageName = 'Closed Won'` |
+| `ParentFilter__c` | Clause SOQL parent sans `WHERE`, ex : `RecordType.DeveloperName = 'Client'` |
+| `WatchedFields__c` | Champs enfant surveillés sur UPDATE, séparés par virgules : `Amount,StageName` |
+| `ExecutionOrder__c` | Ordre d'exécution : `10`, `20`, `30` |
+
+Si une ligne metadata est mal renseignée, elle est loggée puis ignorée. Les autres rollups valides continuent.
+
+### Mapping Apex interne
 
 ```apex
 RollupHelper.RollupConfig config = new RollupHelper.RollupConfig();
@@ -131,21 +153,7 @@ public class OpportunityRollupTriggerHandler {
 
     @TestVisible
     private static List<RollupHelper.RollupConfig> buildConfigs() {
-        List<RollupHelper.RollupConfig> configs = new List<RollupHelper.RollupConfig>();
-
-        RollupHelper.RollupConfig config = new RollupHelper.RollupConfig();
-        config.childObject       = 'Opportunity';
-        config.relationshipField = 'AccountId';
-        config.fieldToAggregate  = 'Amount';
-        config.aggregateFunction = 'SUM';
-        config.parentObject      = 'Account';
-        config.targetField       = 'Total_CA__c';
-        config.filterCriteria    = null;
-        config.parentFilter      = null;
-        config.watchedFields     = new Set<String>{ 'Amount' };
-        configs.add(config);
-
-        return configs;
+        return RollupConfigProvider.getConfigs('Opportunity');
     }
 }
 ```
@@ -221,16 +229,24 @@ force-app/main/default/
 │   ├── RollupHelper.cls-meta.xml
 │   ├── RollupHelperTest.cls          ← tests du moteur générique
 │   ├── RollupHelperTest.cls-meta.xml
-│   ├── OpportunityRollupTriggerHandler.cls      ← configuration Account / Opportunity
+│   ├── RollupConfigProvider.cls                 ← lecture Rollup_Config__mdt
+│   ├── RollupConfigProvider.cls-meta.xml
+│   ├── RollupConfigProviderTest.cls
+│   ├── RollupConfigProviderTest.cls-meta.xml
+│   ├── OpportunityRollupTriggerHandler.cls      ← handler Account / Opportunity
 │   ├── OpportunityRollupTriggerHandler.cls-meta.xml
 │   ├── OpportunityRollupTriggerHandlerTest.cls  ← tests du handler
 │   └── OpportunityRollupTriggerHandlerTest.cls-meta.xml
 ├── triggers/
 │   ├── OpportunityRollupTrigger.trigger      ← délégation au handler
 │   └── OpportunityRollupTrigger.trigger-meta.xml
-└── objects/
-    └── Account/fields/
-        └── Total_CA__c.field-meta.xml        ← exemple de champ cible
+├── objects/
+│   ├── Rollup_Config__mdt/                    ← custom metadata type
+│   │   └── fields/                            ← champs avec aide utilisateur
+│   └── Account/fields/
+│       └── Total_CA__c.field-meta.xml         ← exemple de champ cible
+└── customMetadata/
+    └── Rollup_Config.Opportunity_Amount_To_Account_Total_CA.md-meta.xml
 ```
 
 ---

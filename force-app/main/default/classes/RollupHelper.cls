@@ -16,6 +16,9 @@ public without sharing class RollupHelper {
     @TestVisible
     private static final Set<String> RUNNING = new Set<String>();
 
+    @TestVisible
+    private static final List<String> LAST_ERRORS = new List<String>();
+
     // ─── Modèle de configuration ──────────────────────────────────────────────
 
     public class RollupConfig {
@@ -86,8 +89,17 @@ public without sharing class RollupHelper {
         Boolean            isDelete,
         Boolean            isUndelete
     ) {
+        LAST_ERRORS.clear();
+        if (configs == null || configs.isEmpty()) return;
+
         for (RollupConfig config : configs) {
-            calculate(config, newList, oldList, isInsert, isUpdate, isDelete, isUndelete);
+            try {
+                calculate(config, newList, oldList, isInsert, isUpdate, isDelete, isUndelete);
+            } catch (Exception e) {
+                String message = 'Rollup config ignoree [' + configSummary(config) + '] : ' + e.getMessage();
+                LAST_ERRORS.add(message);
+                System.debug(LoggingLevel.ERROR, message);
+            }
         }
     }
 
@@ -348,5 +360,12 @@ public without sharing class RollupHelper {
         return config.aggregateFunction == 'SUM' || config.aggregateFunction == 'COUNT'
             ? 0
             : null;
+    }
+
+    private static String configSummary(RollupConfig config) {
+        if (config == null) return 'config null';
+        return String.valueOf(config.childObject) + ' -> '
+            + String.valueOf(config.parentObject) + '.'
+            + String.valueOf(config.targetField);
     }
 }

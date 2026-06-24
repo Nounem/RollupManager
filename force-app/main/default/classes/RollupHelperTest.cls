@@ -546,4 +546,31 @@ private class RollupHelperTest {
             System.assert(e.getMessage().contains('champ introuvable'), e.getMessage());
         }
     }
+
+    @isTest
+    static void testCalculateAllIgnoresInvalidConfigAndContinues() {
+        Account acc = getAccount('Compte A');
+        List<Opportunity> opps = new List<Opportunity>{
+            buildOpp(acc.Id, 100, 'Prospecting'),
+            buildOpp(acc.Id, 200, 'Prospecting')
+        };
+        insert opps;
+
+        RollupHelper.RollupConfig invalidConfig = buildConfig();
+        invalidConfig.childObject = 'Objet_Inexistant__c';
+
+        List<RollupHelper.RollupConfig> configs = new List<RollupHelper.RollupConfig>{
+            invalidConfig,
+            buildConfig()
+        };
+
+        Test.startTest();
+        RollupHelper.calculateAll(configs, opps, null, true, false, false, false);
+        Test.stopTest();
+
+        System.assertEquals(300, getAccount('Compte A').Total_CA__c,
+            'La config valide doit s executer meme si une autre config est invalide');
+        System.assertEquals(1, RollupHelper.LAST_ERRORS.size(),
+            'La config invalide doit etre loggee sans bloquer les suivantes');
+    }
 }
